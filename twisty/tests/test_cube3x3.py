@@ -25,18 +25,39 @@ def test_solved_state_has_zero_orientation(cube, solved):
     assert (solved["edge_ori"] == 0).all()
 
 
-@pytest.mark.parametrize("move_idx", range(12))
-def test_move_applied_four_times_is_identity(cube, solved, move_idx):
+@pytest.mark.parametrize("face", ["U", "D", "L", "R", "F", "B"])
+def test_quarter_turn_applied_four_times_is_identity(cube, solved, face):
+    move_idx = cube.MOVE_NAMES.index(face)
     state = solved
     for _ in range(4):
         state = cube.apply_move(state, move_idx)
     assert states_equal(state, solved)
 
 
-@pytest.mark.parametrize("move_idx", range(0, 12, 2))
-def test_move_and_prime_are_inverses(cube, solved, move_idx):
-    state = cube.apply_move(solved, move_idx)
-    state = cube.apply_move(state, move_idx + 1)
+@pytest.mark.parametrize("face", ["U", "D", "L", "R", "F", "B"])
+def test_double_move_applied_twice_is_identity(cube, solved, face):
+    move_idx = cube.MOVE_NAMES.index(f"{face}2")
+    state = solved
+    for _ in range(2):
+        state = cube.apply_move(state, move_idx)
+    assert states_equal(state, solved)
+
+
+@pytest.mark.parametrize("face", ["U", "D", "L", "R", "F", "B"])
+def test_double_move_equals_two_quarter_turns(cube, solved, face):
+    quarter = cube.MOVE_NAMES.index(face)
+    double = cube.MOVE_NAMES.index(f"{face}2")
+    via_quarters = cube.apply_move(cube.apply_move(solved, quarter), quarter)
+    via_double = cube.apply_move(solved, double)
+    assert states_equal(via_quarters, via_double)
+
+
+@pytest.mark.parametrize("face", ["U", "D", "L", "R", "F", "B"])
+def test_move_and_prime_are_inverses(cube, solved, face):
+    quarter = cube.MOVE_NAMES.index(face)
+    prime = cube.MOVE_NAMES.index(f"{face}'")
+    state = cube.apply_move(solved, quarter)
+    state = cube.apply_move(state, prime)
     assert states_equal(state, solved)
 
 

@@ -35,20 +35,25 @@ EDGE_POS = [
 _AXIS_IDX = {"x": 0, "y": 1, "z": 2}
 
 # (axis, layer coordinate value, base direction) for each face; the primed
-# move is the same axis/layer with direction negated.
+# move is the same axis/layer with direction negated. Directions are chosen
+# so each move is a clockwise turn viewed from outside that face (standard
+# notation): our rotation matrices follow the usual convention where d=+1 is
+# counterclockwise when viewed from the positive-axis side, so the layer at
+# the positive coordinate needs d=-1 for clockwise-from-outside, and the
+# layer at the negative coordinate needs d=+1.
 _FACE_DEFS = {
-    "U": ("y", 1, 1),
-    "U'": ("y", 1, -1),
-    "D": ("y", -1, -1),
-    "D'": ("y", -1, 1),
-    "L": ("x", -1, -1),
-    "L'": ("x", -1, 1),
-    "R": ("x", 1, 1),
-    "R'": ("x", 1, -1),
-    "F": ("z", 1, 1),
-    "F'": ("z", 1, -1),
-    "B": ("z", -1, -1),
-    "B'": ("z", -1, 1),
+    "U": ("y", 1, -1),
+    "U'": ("y", 1, 1),
+    "D": ("y", -1, 1),
+    "D'": ("y", -1, -1),
+    "L": ("x", -1, 1),
+    "L'": ("x", -1, -1),
+    "R": ("x", 1, -1),
+    "R'": ("x", 1, 1),
+    "F": ("z", 1, -1),
+    "F'": ("z", 1, 1),
+    "B": ("z", -1, 1),
+    "B'": ("z", -1, -1),
 }
 
 
@@ -114,12 +119,30 @@ def _build_edge_table(axis: str, layer_val: int, direction: int) -> tuple[np.nda
     return perm, ori_delta
 
 
+def _compose_table(perm: np.ndarray, ori: np.ndarray, mod: int) -> tuple[np.ndarray, np.ndarray]:
+    """Compose a move table with itself: the table for applying it twice
+    (used to derive 180-degree double moves like U2 from the U quarter turn)."""
+    return perm[perm], (ori[perm] + ori) % mod
+
+
+_BASE_MOVE_NAMES = ["U", "U'", "D", "D'", "L", "L'", "R", "R'", "F", "F'", "B", "B'"]
+
+
 class Cube3x3(TwistyPuzzle):
     """3x3x3 Rubik's Cube, represented as 8 corner + 12 edge cubies (not stickers)."""
 
     NUM_CORNERS = 8
     NUM_EDGES = 12
-    MOVE_NAMES = ["U", "U'", "D", "D'", "L", "L'", "R", "R'", "F", "F'", "B", "B'"]
+    # Quarter turns plus double (180-degree) moves, so move counts here match
+    # the Half-Turn Metric (HTM) used for e.g. God's number = 20.
+    MOVE_NAMES = [
+        "U", "U'", "U2",
+        "D", "D'", "D2",
+        "L", "L'", "L2",
+        "R", "R'", "R2",
+        "F", "F'", "F2",
+        "B", "B'", "B2",
+    ]
 
     def __init__(self):
         moves = [Move(name) for name in self.MOVE_NAMES]
@@ -128,19 +151,29 @@ class Cube3x3(TwistyPuzzle):
             orientations_per_piece=3,
             move_generators=moves,
         )
-        corner_perms, corner_oris, edge_perms, edge_oris = [], [], [], []
-        for name in self.MOVE_NAMES:
+        base = {}
+        for name in _BASE_MOVE_NAMES:
             axis, layer_val, direction = _FACE_DEFS[name]
             cp, co = _build_corner_table(axis, layer_val, direction)
             ep, eo = _build_edge_table(axis, layer_val, direction)
+            base[name] = (cp, co, ep, eo)
+
+        corner_perms, corner_oris, edge_perms, edge_oris = [], [], [], []
+        for name in self.MOVE_NAMES:
+            if name.endswith("2"):
+                cp, co, ep, eo = base[name[:-1]]
+                cp, co = _compose_table(cp, co, 3)
+                ep, eo = _compose_table(ep, eo, 2)
+            else:
+                cp, co, ep, eo = base[name]
             corner_perms.append(cp)
             corner_oris.append(co)
             edge_perms.append(ep)
             edge_oris.append(eo)
-        self._corner_perm_table = np.array(corner_perms)  # (12, 8)
-        self._corner_ori_table = np.array(corner_oris)  # (12, 8)
-        self._edge_perm_table = np.array(edge_perms)  # (12, 12)
-        self._edge_ori_table = np.array(edge_oris)  # (12, 12)
+        self._corner_perm_table = np.array(corner_perms)  # (18, 8)
+        self._corner_ori_table = np.array(corner_oris)  # (18, 8)
+        self._edge_perm_table = np.array(edge_perms)  # (18, 12)
+        self._edge_ori_table = np.array(edge_oris)  # (18, 12)
 
     def solved_state(self) -> dict[str, np.ndarray]:
         return {

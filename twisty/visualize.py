@@ -46,8 +46,30 @@ _NET_OFFSET = {
     "D": (3, 0),
 }
 
-_CYCLE_POS = {1: 2, 2: 0, 0: 1}  # y->z->x->y
-_CYCLE_NEG = {1: 0, 0: 2, 2: 1}  # inverse
+# axis_to_ori maps used when building corner move tables (twisty/cube3x3.py),
+# inverted here to recover which axis/sign the U/D sticker maps to given ori.
+_INV_AXIS_TO_ORI_POS = {0: 1, 1: 2, 2: 0}
+_INV_AXIS_TO_ORI_NEG = {0: 1, 1: 0, 2: 2}
+
+
+def _corner_rotation(
+    old_pos: tuple[int, int, int],
+    new_pos: tuple[int, int, int],
+    axis_out: int,
+    sign_out: int,
+) -> np.ndarray:
+    """Reconstruct the 3x3 rotation matrix that moved a corner from old_pos to
+    new_pos, given where its primary (U/D) sticker ends up. A proper rotation
+    is fully determined by the images of any 2 linearly independent vectors
+    plus det=+1, so this also pins down where the other two stickers land."""
+    u1, u2 = np.array([0, 1, 0]), np.array(old_pos)
+    v1 = np.zeros(3, dtype=int)
+    v1[axis_out] = sign_out
+    v2 = np.array(new_pos)
+    u3, v3 = np.cross(u1, u2), np.cross(v1, v2)
+    U = np.stack([u1, u2, u3], axis=1)
+    V = np.stack([v1, v2, v3], axis=1)
+    return np.round(V @ np.linalg.inv(U)).astype(int)
 
 
 def _color_for(axis: int, sign: int) -> str:
@@ -73,13 +95,21 @@ def state_to_facelets(state: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         piece_id = int(state["corner_perm"][slot_idx])
         ori = int(state["corner_ori"][slot_idx])
         orig_pos = CORNER_POS[piece_id]
-        cyc = _CYCLE_POS if slot_parity[slot_idx] == 1 else _CYCLE_NEG
+
+        inv_map = _INV_AXIS_TO_ORI_POS if slot_parity[slot_idx] == 1 else _INV_AXIS_TO_ORI_NEG
+        axis_out = inv_map[ori]
+        # The helper vector tracked during table-building is the unsigned
+        # (0,1,0), not the corner's actual y-sticker direction, so recovering
+        # the true rotation needs an orig_pos[1] correction factor here.
+        sign_out = orig_pos[1] * pos[axis_out]
+        R = _corner_rotation(orig_pos, pos, axis_out, sign_out)
+
         for axis in range(3):
             color = _color_for(axis, orig_pos[axis])
-            cur_axis = axis
-            for _ in range(ori):
-                cur_axis = cyc[cur_axis]
-            face, row, col = _face_row_col(pos, cur_axis)
+            vec = np.zeros(3, dtype=int)
+            vec[axis] = orig_pos[axis]
+            result_axis = int(np.nonzero(R @ vec)[0][0])
+            face, row, col = _face_row_col(pos, result_axis)
             grid[face][row, col] = color
 
     for slot_idx in range(12):
