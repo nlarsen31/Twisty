@@ -7,6 +7,37 @@ for twisty puzzles (starting with 3x3x3 Rubik's Cube), using an autodidactic/sel
 training loop, with the puzzle representation generalized so new puzzles (2x2x2, pyraminx,
 megaminx, skewb, NxNxN, etc.) can be added without touching the training or search code.
 
+## Implementation Status
+
+What's actually built so far (data model + visualization; network/search/eval are still future
+work per the build order below):
+
+- `twisty/puzzle.py` — the `TwistyPuzzle` abstract base class and `Move` dataclass, matching
+  the skeleton below.
+- `twisty/cube3x3.py` — `Cube3x3`: cubie-based state (corner/edge perm + orientation arrays),
+  geometrically-derived move tables (not hand-hardcoded — built from 90° rotation matrices
+  and verified against known cube invariants), `apply_move`/`apply_move_batch`, `scramble`,
+  `encode`/`input_dim`.
+  - Generator set is 18 moves, not 12: the 12 quarter turns (`U, U', D, D', ...`) plus the 6
+    double/180° moves (`U2, D2, ...`), so move counts here match the Half-Turn Metric (HTM)
+    that "God's number = 20" is quoted under.
+  - Move directions follow standard notation (clockwise viewed from outside each face).
+- `twisty/visualize.py` — `plot_net`/`state_to_facelets`: renders a cube state as an unfolded
+  2D net (6 colored faces) via matplotlib. Reconstructing which sticker shows on which face
+  from the compressed (perm, orientation) state turned out to be non-trivial for corners (a
+  piece's orientation value alone isn't enough — the axis mapping for relocated corners has
+  to be reconstructed geometrically); see git history / commit messages for the details.
+- `twisty/scripts/render_states.py` + `scripts/visualize.sh` — renders a grid of panels (solved,
+  one turn of each of the 12 quarter/prime moves and 6 double moves, a couple of scrambles, and
+  a named algorithm) to a PNG for quick visual sanity-checking. Run via `./scripts/visualize.sh
+  [output.png] [seed]`.
+- `twisty/tests/` — pytest suite (order-4 for quarter turns, order-2 for doubles, move/prime and
+  double/quarter-turn-pair consistency, orientation invariants under random scrambling, `U` only
+  touching the top layer, `apply_move_batch` matching `apply_move`, facelet-completeness and
+  uniform-row checks on the rendered net). Run via `source .venv/bin/activate && python -m
+  pytest twisty/tests`.
+- Virtualenv: `.venv` (managed with `uv`), with `numpy`, `matplotlib`, `pytest` installed.
+
 ## Core Abstraction
 
 Every twisty puzzle reduces to:
@@ -75,10 +106,11 @@ ground truth, which won't be available at scale for other puzzles.
 - Corner orientation: 0, 1, or 2 (mod 3 twist). Edge orientation: 0 or 1 (flipped or not).
 - Encode via one-hot: for each of the 20 pieces, one-hot over (position × orientation)
   combinations, concatenated into a flat vector. This is `input_dim()` for `Cube3x3`.
-- 12 face turns (U, U', D, D', L, L', R, R', F, F', B, B') as the generator set. Each is a
-  fixed permutation + orientation delta applied to the corner/edge arrays — implement as
-  precomputed index arrays so moves are pure NumPy indexing (fast, vectorizable across a
-  batch of states at once).
+- 18 face turns (12 quarter turns U, U', D, D', L, L', R, R', F, F', B, B' plus 6 double moves
+  U2, D2, L2, R2, F2, B2) as the generator set. Each is a fixed permutation + orientation delta
+  applied to the corner/edge arrays — implement as precomputed index arrays so moves are pure
+  NumPy indexing (fast, vectorizable across a batch of states at once). Double moves are just
+  the quarter-turn table composed with itself, not separately derived.
 
 ## Data Generation (Autodidactic Iteration)
 
@@ -129,10 +161,14 @@ add new puzzle subclasses.
 
 ## Suggested Build Order
 
-1. `TwistyPuzzle` abstract base class + `Move` representation.
-2. `Cube3x3` subclass: state arrays, move table generation, `encode()`, `scramble()`.
-3. Brute-force BFS solver for depth ≤ 8 (ground truth for calibration + unit tests).
-4. Data generation pipeline (batched, vectorized).
+1. ✅ `TwistyPuzzle` abstract base class + `Move` representation.
+2. ✅ `Cube3x3` subclass: state arrays, move table generation, `encode()`, `scramble()`. Also
+   added a matplotlib net visualizer and a pytest suite (not originally scoped as a numbered
+   step, but done alongside the data model per user request).
+3. Brute-force BFS solver for depth ≤ 8 (ground truth for calibration + unit tests). *(not
+   started)*
+4. Data generation pipeline (batched, vectorized). *(not started — `apply_move_batch` exists,
+   but no batched scramble-generation pipeline yet)*
 5. MLP model + training loop (first pass: raw scramble-depth labels).
 6. Autodidactic refinement loop (self-play relabeling).
 7. Weighted A* search wrapper using the trained network as heuristic.
