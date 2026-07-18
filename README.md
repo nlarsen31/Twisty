@@ -31,11 +31,17 @@ work per the build order below):
   one turn of each of the 12 quarter/prime moves and 6 double moves, a couple of scrambles, and
   a named algorithm) to a PNG for quick visual sanity-checking. Run via `./scripts/visualize.sh
   [output.png] [seed]`.
+- `twisty/bfs.py` — `bfs_distances`/`distance_of`: single-source BFS from solved, giving exact
+  optimal distance-from-solved for any state reachable within a configurable `max_depth`
+  (default 5; ~6 is the practical ceiling for a plain Python dict — see build-order step 3
+  below for why depth 8 isn't attempted this way). Used both to unit-test the move tables
+  against independently-published state-count data and as ground truth for later network
+  calibration.
 - `twisty/tests/` — pytest suite (order-4 for quarter turns, order-2 for doubles, move/prime and
   double/quarter-turn-pair consistency, orientation invariants under random scrambling, `U` only
   touching the top layer, `apply_move_batch` matching `apply_move`, facelet-completeness and
-  uniform-row checks on the rendered net). Run via `source .venv/bin/activate && python -m
-  pytest twisty/tests`.
+  uniform-row checks on the rendered net, BFS distance counts matching published HTM data). Run
+  via `source .venv/bin/activate && python -m pytest twisty/tests`.
 - Virtualenv: `.venv` (managed with `uv`), with `numpy`, `matplotlib`, `pytest` installed.
 
 ## Core Abstraction
@@ -165,8 +171,13 @@ add new puzzle subclasses.
 2. ✅ `Cube3x3` subclass: state arrays, move table generation, `encode()`, `scramble()`. Also
    added a matplotlib net visualizer and a pytest suite (not originally scoped as a numbered
    step, but done alongside the data model per user request).
-3. Brute-force BFS solver for depth ≤ 8 (ground truth for calibration + unit tests). *(not
-   started)*
+3. ✅ Brute-force BFS solver — implemented as a single-source table (`twisty/bfs.py`), capped
+   at a modest depth rather than the full depth 8, since exhaustive state counts blow up fast
+   (100M+ states at depth 7, 1.3B+ at depth 8, per published HTM data). Same-face-move pruning
+   cuts branching from 18 to 15 after the first move. Verified against published HTM
+   state-count-by-distance data (1, 18, 243, 3240 at depths 0-3), not just internal
+   consistency. If deeper ground truth is needed later, extend toward a bidirectional
+   meet-in-the-middle search instead of raising `max_depth` further.
 4. Data generation pipeline (batched, vectorized). *(not started — `apply_move_batch` exists,
    but no batched scramble-generation pipeline yet)*
 5. MLP model + training loop (first pass: raw scramble-depth labels).
